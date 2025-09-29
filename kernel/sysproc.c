@@ -23,6 +23,25 @@ sys_getpid(void)
 }
 
 uint64
+sys_getancestor(void)
+{
+  int nivel;
+  argint(0, &nivel);
+
+  struct proc *p = myproc();
+  struct proc *actual = p;
+
+  for(int i = 0; i < nivel; i++) {
+    if(actual->parent == 0) {
+      return -1;
+    }
+    actual = actual->parent;
+  }
+
+  return actual->pid;
+}
+
+uint64
 sys_fork(void)
 {
   return kfork();

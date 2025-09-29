@@ -143,6 +143,7 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_yosoytupadre\
+	$U/_ancestros\
 	$U/_ppid\
 
 fs.img: mkfs/mkfs README $(UPROGS)
