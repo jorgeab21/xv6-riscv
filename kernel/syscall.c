@@ -129,6 +129,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_getppid] sys_getppid,
 [SYS_getancestor] sys_getancestor,
+[SYS_settickets] sys_settickets,
 };
 
 void

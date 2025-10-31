@@ -145,6 +145,7 @@ UPROGS=\
 	$U/_yosoytupadre\
 	$U/_ancestros\
 	$U/_ppid\
+	$U/_sttest\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

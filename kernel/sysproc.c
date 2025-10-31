@@ -132,3 +132,25 @@ sys_getppid(void)
   if(p->parent == 0) return -1;
   return p->parent->pid;
 }
+
+uint64
+sys_settickets(void)
+{
+    int n;
+
+    // Lee el argumento desde el espacio de usuario
+    argint(0, &n);
+
+    // Obtiene el proceso actual
+    struct proc *p = myproc();
+
+    // Evita valores inválidos
+    if (n < 1)
+        return -1;
+
+    // Asigna la cantidad de tickets al proceso
+    p->tickets = n;
+
+    return 0;
+}
+
