@@ -103,6 +103,10 @@ extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_getppid(void);
 extern uint64 sys_getancestor(void);
+extern uint64 sys_mrdprotect(void);
+extern uint64 sys_munrdprotect(void);
+
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
@@ -130,6 +134,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_getppid] sys_getppid,
 [SYS_getancestor] sys_getancestor,
 [SYS_settickets] sys_settickets,
+[SYS_mrdprotect] sys_mrdprotect,
+[SYS_munrdprotect] sys_munrdprotect,
 };
 
 void
