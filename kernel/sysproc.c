@@ -153,17 +153,15 @@ sys_settickets(void)
 
     return 0;
 }
-
 uint64
 sys_mrdprotect(void)
 {
   uint64 addr;
   int len;
 
-  // En esta versión de xv6, argaddr y argint no retornan nada,
-  // solo llenan las variables para tratar de solucionar el error q me salio.
-  argaddr(0, &addr);
-  argint(1, &len);
+  // Si falla la lectura de argumentos, retorna -1
+  if(argaddr(0, &addr) < 0 || argint(1, &len) < 0)
+    return -1;
 
   return mrdprotect((void*)addr, len);
 }
@@ -174,9 +172,8 @@ sys_munrdprotect(void)
   uint64 addr;
   int len;
 
-  argaddr(0, &addr);
-  argint(1, &len);
+  if(argaddr(0, &addr) < 0 || argint(1, &len) < 0)
+    return -1;
 
   return munrdprotect((void*)addr, len);
 }
-
