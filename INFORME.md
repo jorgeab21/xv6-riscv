@@ -1,162 +1,91 @@
-# **INFORME Tarea 2 – Sistemas Operativos**
+# **INFORME Tarea 3 – Sistemas Operativos**
 
-**Integrantes:** Matías Céspedes, Jorge Becerra 
-**Grupo:** 6 
+**Integrantes:** Jorge Becerra
+Matías Céspedes
+**Grupo:** 6
 
 ## 1. Funcionamiento y Lógica de la Implementación
 
-**Objetivo:** 
-Implementar un planificador de procesos (*scheduler*) basado en el algoritmo **Lottery Scheduling** dentro del sistema operativo xv6. 
-El objetivo es asignar CPU de forma proporcional al número de tickets que posee cada proceso, de manera que la probabilidad de ser elegido sea directamente proporcional a los tickets asignados.
+**Objetivo:**
+El objetivo de esta tarea fue implementar un mecanismo de protección de memoria en xv6 que permita deshabilitar la lectura de páginas específicas de un proceso ("Write-Only memory"). Esto es útil en contextos de seguridad para proteger datos sensibles que no deben ser leídos inadvertidamente.
 
-**Funcionamiento General:** 
-- Cada proceso posee un campo `tickets` que representa su cantidad de boletos. 
-- Durante la ejecución del *scheduler*, se calcula el total de tickets de todos los procesos en estado *RUNNABLE*. 
-- Se genera un número aleatorio entre `0` y `total_tickets - 1`. 
-- Se recorre la lista de procesos acumulando los tickets hasta encontrar el proceso ganador. 
-- El proceso ganador es ejecutado mediante el cambio de contexto (`swtch`). 
-- Si un proceso tiene menos de 1 ticket, se le asigna 1 por seguridad.
+**Funcionamiento General:**
+- La protección se logra manipulando los bits de permisos en las **Entradas de la Tabla de Páginas (PTE)**.
+- Se implementaron dos llamadas al sistema que modifican el bit `PTE_R` (Read) de las páginas correspondientes a un rango de memoria virtual.
+- **`mrdprotect`:** Recorre las páginas del rango indicado y apaga el bit `PTE_R` (`~PTE_R`).
+- **`munrdprotect`:** Recorre las páginas y vuelve a encender el bit `PTE_R` (`| PTE_R`).
+- Tras cualquier modificación en la tabla de páginas, se ejecuta la instrucción `sfence_vma()` para limpiar el **TLB** (Translation Lookaside Buffer) y asegurar que la CPU reconozca los nuevos permisos inmediatamente.
 
-**Syscall Implementada – `settickets(int n)`:** 
-Permite modificar el número de tickets del proceso actual. 
-El valor ingresado define su probabilidad de ser elegido por el *scheduler*.
-
-**Comportamiento esperado:** 
-- Si se llama con un número válido, los tickets se actualizan correctamente. 
-- Si se entrega un valor negativo o cero, se retorna un error. 
-- Esto permite controlar la prioridad relativa de los procesos de usuario.
+**Syscalls Implementadas:**
+1. **`mrdprotect(void *addr, int len)`:** Deshabilita la lectura en `len` páginas a partir de `addr`. Retorna -1 si hay error.
+2. **`munrdprotect(void *addr, int len)`:** Restaura el permiso de lectura en el rango especificado.
 
 ## 2. Modificaciones Realizadas
 
 ### Archivos modificados
 
-**`kernel/proc.h`** 
-- Se agregó el campo `int tickets;` para almacenar la cantidad de boletos de cada proceso. 
-- Se agregó también `int cpu_slices;` para llevar la cuenta de cuántas veces ha sido elegido por el scheduler.
+**`kernel/vm.c`**
+- Se implementó la lógica principal en las funciones `mrdprotect` y `munrdprotect`.
+- Se utilizó la función `walk()` con el argumento `alloc=0` para obtener la PTE correspondiente a una dirección virtual sin crear nuevas páginas.
+- Se agregaron validaciones: alineación de página (`PGSIZE`), existencia de la PTE (`PTE_V`) y permisos de usuario (`PTE_U`).
+- Se realizó la manipulación de bits y el flush del TLB con `sfence_vma()`.
 
-**`kernel/sysproc.c`** 
-- Se implementó la syscall `sys_settickets(void)` para asignar tickets al proceso actual. 
-- La función recibe un parámetro `n` desde el espacio de usuario mediante `argint(0, &n);`. 
-- Valida que el número de tickets sea positivo antes de actualizar `p->tickets`.
+**`kernel/sysproc.c`**
+- Se crearon las funciones `sys_mrdprotect` y `sys_munrdprotect` para recibir los argumentos desde el espacio de usuario.
+- Se adaptó la captura de argumentos (`argaddr`, `argint`) considerando que en esta versión de xv6 estas funciones tienen retorno `void`.
 
-**`kernel/syscall.h`** 
-- Se añadió el número de syscall correspondiente a `settickets`.
+**`kernel/defs.h`**
+- Se añadieron los prototipos de `mrdprotect` y `munrdprotect` para hacerlas visibles desde `sysproc.c`.
 
-**`kernel/syscall.c`** 
-- Se declaró externamente la función `sys_settickets`. 
-- Se agregó la entrada respectiva en la tabla de syscalls para asociar el número con la función del kernel.
+**`kernel/syscall.h`**
+- Se definieron los números de syscall `SYS_mrdprotect` (25) y `SYS_munrdprotect` (26).
 
-**`kernel/proc.c`** 
-- Se modificó la función `scheduler()` para implementar la lógica del **Lottery Scheduling**. 
-- Se calcula el total de tickets de los procesos *RUNNABLE*, se genera un número aleatorio (`winner`) y se selecciona el proceso ganador sumando tickets. 
-- Se ejecuta el proceso elegido mediante `swtch(&c->context, &p->context);`. 
-- Se garantiza que cada proceso tenga al menos 1 ticket por seguridad. 
-- Se incrementa `cpu_slices` cada vez que un proceso es ejecutado.
+**`kernel/syscall.c`**
+- Se registraron las nuevas llamadas en el arreglo de punteros a funciones y se declararon sus `extern`.
 
-**`user/user.h`** 
-- Se añadió la declaración de la nueva syscall `int settickets(int n);`.
+**`user/user.h` y `user/usys.pl`**
+- Se definieron las firmas para que los programas de usuario puedan invocar estas syscalls.
+- Se generaron los stubs de ensamblador para la transición a modo kernel.
 
-**`user/usys.pl`** 
-- Se agregó la línea correspondiente para generar el *wrapper* de `settickets()` en espacio de usuario.
-
-**`Makefile`** 
-- Se incluyó el nuevo programa de prueba `sttest` en la lista `UPROGS`.
+**`Makefile`**
+- Se añadió el programa de prueba `_rdprotect_test` a la lista `UPROGS`.
 
 ## 3. Dificultades Encontradas y Soluciones Implementadas
 
-** Dificultad 1: Error de compilación por variables no utilizadas** 
-**Problema:** Durante las primeras pruebas del `scheduler()` aparecían errores del tipo *“unused variable 'p'”* o *“function defined but not used”* 
-**Solución:** Se revisó cuidadosamente el alcance de las variables y se ajustaron las llaves de cierre (`{}`) para asegurar que todas las declaraciones estuvieran dentro de los bloques correctos. Esto permitió compilar el kernel sin advertencias.
-
---
-
-** Dificultad 2: Lógica de selección aleatoria del proceso ganador** 
-**Problema:** El algoritmo de lotería debía recorrer todos los procesos *RUNNABLE* sumando los tickets hasta alcanzar el número ganador, pero en las primeras versiones el cálculo de `total_tickets` y `winner` no coincidía 
-**Solución:** Se reestructuró el bucle `for` asegurando que el conteo de tickets se hiciera antes del sorteo, y se agregó una validación de seguridad para asignar 1 ticket mínimo a cada proceso. También se usó `rand() % total_tickets` para garantizar uniformidad en la selección.
+**Dificultad 1: Error de compilación en `sysproc.c`**
+**Problema:** Al intentar validar el retorno de `argaddr()` dentro de un `if`, el compilador arrojaba el error *"void value not ignored as it ought to be"*. Esto se debía a que en la distribución de xv6 utilizada, estas funciones auxiliares son `void`.
+**Solución:** Se eliminó la comprobación de retorno en el `if` dentro de `sysproc.c` y se delegó la validación lógica (direcciones válidas) a la implementación en `vm.c`.
 
 ---
 
-** Dificultad 3: Implementación de la syscall `settickets()`** 
-**Problema:** La syscall no actualizaba correctamente los tickets porque el valor ingresado desde el espacio de usuario no se transfería al kernel. 
-**Solución:** Se corrigió la lectura del argumento utilizando `argint(0, &n)` y se agregó un control para evitar valores negativos. Con esto, el proceso pudo actualizar su campo `tickets` correctamente al ejecutar `sttest`.
+**Dificultad 2: Persistencia de permisos antiguos en caché**
+**Problema:** Aunque se modificaban los bits en la tabla de páginas, existía el riesgo de que el procesador siguiera usando permisos antiguos almacenados en el TLB.
+**Solución:** Se investigó el funcionamiento de la paginación en RISC-V y se añadió la llamada a `sfence_vma()` al final de cada función de protección para invalidar el TLB.
 
 ---
 
-** Dificultad 4: Fallo de ejecución del programa de usuario (`exec $ failed`)** 
-**Problema:** El programa de prueba `sttest` no se ejecutaba, arrojando el mensaje “exec $ failed”. 
-**Solución:** Se verificó que el archivo estuviera correctamente listado en la variable `UPROGS` del `Makefile`, y que existiera en la carpeta `/user`. Tras recompilar (`make clean` + `make qemu`), el programa funcionó correctamente mostrando la asignación de tickets.
-
----
-
-** Dificultad 5: Depuración de errores aleatorios en el scheduler** 
-**Problema:** En ocasiones, el sistema no ejecutaba correctamente los procesos o se colgaba al iniciar. Esto se debía a bloqueos de locks (`acquire()` / `release()`) en secciones mal ubicadas. 
-**Solución:** Se reordenaron las llamadas a `acquire()` y `release()` alrededor de las secciones críticas, y se comprobó que solo se ejecutara un proceso en estado *RUNNABLE* a la vez durante el cambio de contexto.
+**Dificultad 3: Interpretación de la excepción del procesador**
+**Problema:** Al probar la protección, el proceso hijo terminaba abruptamente con un mensaje `usertrap` y `scause 0xd`. Inicialmente pareció un error de código.
+**Solución:** Tras analizar la documentación de RISC-V, se confirmó que `scause 0xd` (13) corresponde a *Load Page Fault*. Esto validó que la tarea estaba correcta: el hardware detectó y bloqueó el intento de lectura no autorizado.
 
 ## 4. Programa de Prueba y Resultados
 
-** Programa de prueba: `sttest.c`**
+**Programa de prueba: `rdprotect_test.c`**
 
-El programa `sttest` fue creado con el objetivo de verificar el correcto funcionamiento de la nueva syscall `settickets(int n)`.
-
-### Descripción:
-- El programa recibe como argumento un número entero `n`, correspondiente a la cantidad de tickets que se desea asignar al proceso actual.
-- Llama a la syscall `settickets(n)` e imprime un mensaje confirmando si la asignación fue exitosa o si el valor fue inválido.
-
-### Ejemplo de uso:
-$ sttest 50
-Tickets asignados correctamente: 50
-
-### Validación en el kernel
-
-Para confirmar que la syscall efectivamente modificaba los tickets del proceso, se inspeccionó la estructura del proceso (`struct proc`) en el archivo `proc.c`, observando que el valor de `p->tickets` cambiaba correctamente tras la llamada a `settickets()`.
-
-Además, mediante el uso del scheduler modificado, se verificó que:
-- Los procesos con más tickets aumentan su frecuencia de ejecución (medida con `cpu_slices`). 
-- Cada ejecución incrementa el contador `p->cpu_slices++`, lo cual permite observar la distribución probabilística de ejecución según la cantidad de tickets asignados.
-
----
+Se desarrolló un test que realiza el siguiente flujo:
+1. Escribe un dato en memoria.
+2. Protege la página contra lectura (`mrdprotect`).
+3. Hace `fork()`. El hijo intenta leer esa dirección.
+4. El padre espera, luego revierte la protección (`munrdprotect`) y verifica el dato.
 
 ### Resultados obtenidos
-- El sistema compiló y ejecutó correctamente sin errores ni bloqueos. 
-- La syscall `settickets()` respondió de manera estable para distintos valores de entrada. 
-- Los procesos con más tickets fueron seleccionados más veces, validando el funcionamiento del **Lottery Scheduling**. 
-- El kernel mantuvo su estabilidad durante las pruebas, sin fugas ni estados muertos.
+Al ejecutar el test en QEMU:
 
----
-
-## 5. Posibles Problemas del Lottery Scheduling
-
-A pesar de su simplicidad y eficiencia probabilística, el algoritmo de **Lottery Scheduling** presenta algunas limitaciones importantes:
-
-1. **Variabilidad en tiempos de ejecución:** 
-   Dado que la selección de procesos es aleatoria, pueden existir fluctuaciones en los tiempos de respuesta, especialmente en sistemas con pocos procesos activos.
-
-2. **Falta de determinismo:** 
-   No garantiza que todos los procesos reciban CPU en un orden predecible. En entornos donde la equidad temporal es crítica, puede generar comportamientos inesperados.
-
-3. **Injusticia a corto plazo:** 
-   Un proceso con pocos tickets podría tardar mucho más en ser seleccionado si el azar no lo favorece, afectando su rendimiento momentáneo.
-
-4. **Sobrecarga mínima por conteo de tickets:** 
-   Aunque leve, la suma de todos los tickets en cada iteración del scheduler introduce un costo computacional adicional comparado con algoritmos deterministas como Round Robin.
-
-5. **Dependencia de la calidad del generador aleatorio:** 
-   Si la función `rand()` no produce una distribución verdaderamente uniforme, la equidad del sistema puede verse afectada.
-
----
-
-## 6. Conclusión
-
-Se implementó exitosamente un **sistema de planificación por lotería (Lottery Scheduling)** en el kernel de XV6, integrando correctamente el campo de tickets, la syscall `settickets(int n)` y las modificaciones en el `scheduler()`.
-
-El programa de prueba `sttest` permitió comprobar la funcionalidad del sistema, mostrando resultados consistentes con la teoría: los procesos con más tickets obtienen una mayor proporción de CPU time.
-
-El desarrollo implicó diversos desafíos técnicos relacionados con el manejo de locks, la lógica de selección aleatoria y la correcta comunicación entre espacio de usuario y kernel. 
-Sin embargo, la versión final del sistema logró un funcionamiento estable y coherente.
-
----
-
-**Repositorio:** [GitHub - xv6-riscv Tarea 2](https://github.com/Matiescespedes/xv6-riscv/tree/users/mati/t2)
-
-
-
+```text
+Test 1: Protegiendo memoria (lectura deshabilitada)...
+[Hijo] Intentando leer (Deberia morir con scause 0xd/13)...
+usertrap(): unexpected scause 0xd pid=4 ...
+[Padre] El hijo termino/murio.
+Proteccion revertida.
+Valor final leido: Z (Debe ser Z)
+--- TEST FINALIZADO ---

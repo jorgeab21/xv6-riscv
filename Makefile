@@ -146,6 +146,7 @@ UPROGS=\
 	$U/_ancestros\
 	$U/_ppid\
 	$U/_sttest\
+	$U/_rdprotect_test
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
