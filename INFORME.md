@@ -89,3 +89,18 @@ usertrap(): unexpected scause 0xd pid=4 ...
 Proteccion revertida.
 Valor final leido: Z (Debe ser Z)
 --- TEST FINALIZADO ---
+
+El resultado valida completamente la tarea:
+
+La escritura funcionó sin errores.
+
+La lectura protegida generó un Trap 0xd (éxito de protección).
+
+La reversión de permisos permitió recuperar el dato original.
+
+5. Conclusión
+Se ha modificado exitosamente el kernel de xv6 para soportar protección de lectura en páginas de memoria. A través de la manipulación de los bits de la tabla de páginas y la correcta gestión de las llamadas al sistema, se logró una funcionalidad que permite a los procesos definir regiones de memoria "solo escritura".
+
+Este ejercicio permitió comprender en profundidad la interacción entre el software (kernel) y el hardware (MMU/TLB de RISC-V), así como la importancia de los mecanismos de excepción para garantizar la seguridad del sistema.
+
+repositorio: https://github.com/jorgeab21/xv6-riscv/tree/tarea3
